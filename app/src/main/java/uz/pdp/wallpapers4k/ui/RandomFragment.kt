@@ -11,6 +11,8 @@ import android.widget.Toast
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.lifecycle.ViewModelProvider
 import androidx.navigation.fragment.findNavController
+import androidx.paging.PagingData
+import androidx.paging.filter
 import com.zhuinden.fragmentviewbindingdelegatekt.viewBinding
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -27,18 +29,66 @@ import uz.pdp.wallpapers4k.viewmodel.SplashViewModel
 import uz.pdp.wallpapers4k.viewmodel.ViewModelFactory
 import kotlin.coroutines.CoroutineContext
 
-class RandomFragment : Fragment(R.layout.fragment_random), CoroutineScope {
+class RandomFragment : Fragment(), CoroutineScope {
 
-    private val binding by viewBinding(FragmentRandomBinding::bind)
+    private lateinit var binding: FragmentRandomBinding
     private lateinit var recAdapter: RecAdapter
-    private lateinit var splashViewModel: SplashViewModel
+    private var splashViewModel: SplashViewModel? = null
+    private var pagingData: PagingData<RandomClass>? = null
     private lateinit var job: Job
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+
+        binding.apply {
+            val networkHelper = NetworkHelper(requireContext())
+            if (splashViewModel == null) {
+                splashViewModel = ViewModelProvider(this@RandomFragment, ViewModelFactory(networkHelper))[SplashViewModel::class.java]
+                splashViewModel?.fetchSplashRandom()?.observe(viewLifecycleOwner, {
+                    when (it) {
+                        is SplashResourceRandom.Loading -> {
+                            recycle.visibility = View.GONE
+                        }
+                        is SplashResourceRandom.Success -> {
+                            spinKit.visibility = View.GONE
+                            recycle.visibility = View.VISIBLE
+                            launch {
+                                pagingData = PagingData.empty()
+                                pagingData = it.list
+                                recAdapter.submitData(pagingData!!)
+                            }
+                        }
+                        is SplashResourceRandom.Error -> {
+                            spinKit.visibility = View.GONE
+                            recycle.visibility = View.GONE
+                            val textview = TextView(requireContext())
+                            val layoutParam = ConstraintLayout.LayoutParams(
+                                LinearLayout.LayoutParams.WRAP_CONTENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT
+                            )
+                            layoutParam.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                            layoutParam.rightToRight = ConstraintLayout.LayoutParams.PARENT_ID
+                            layoutParam.leftToLeft = ConstraintLayout.LayoutParams.PARENT_ID
+                            layoutParam.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                            textview.text = it.message
+                            textview.layoutParams = layoutParam
+                        }
+                    }
+                })
+            }
+        }
+    }
+
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View? {
+        binding = FragmentRandomBinding.inflate(inflater, container, false)
         job = Job()
 
         binding.apply {
+
             recAdapter = RecAdapter(requireContext(), object : RecAdapter.OnMyClickListener {
                 override fun onClick(position: RandomClass) {
                     val bundle = Bundle()
@@ -49,38 +99,19 @@ class RandomFragment : Fragment(R.layout.fragment_random), CoroutineScope {
             })
             recycle.adapter = recAdapter
 
-            val networkHelper = NetworkHelper(requireContext())
-            splashViewModel = ViewModelProvider(this@RandomFragment, ViewModelFactory(networkHelper))[SplashViewModel::class.java]
-            splashViewModel.fetchSplashRandom().observe(viewLifecycleOwner, {
-                when(it) {
-                    is SplashResourceRandom.Loading -> {
-                        recycle.visibility = View.GONE
-                    }
-                    is SplashResourceRandom.Success -> {
-                        spinKit.visibility = View.GONE
-                        recycle.visibility = View.VISIBLE
-                        launch {
-                            recAdapter.submitData(it.list)
-                        }
-                    }
-                    is SplashResourceRandom.Error -> {
-                        spinKit.visibility = View.GONE
-                        recycle.visibility = View.GONE
-                        val textview = TextView(requireContext())
-                        val layoutParam = ConstraintLayout.LayoutParams(
-                            LinearLayout.LayoutParams.WRAP_CONTENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT
-                        )
-                        layoutParam.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
-                        layoutParam.rightToRight = ConstraintLayout.LayoutParams.PARENT_ID
-                        layoutParam.leftToLeft = ConstraintLayout.LayoutParams.PARENT_ID
-                        layoutParam.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-                        textview.text = it.message
-                        textview.layoutParams = layoutParam
-                    }
+            if (splashViewModel != null) {
+                spinKit.visibility = View.GONE
+                launch {
+                    listSubmit()
                 }
-            })
+            }
         }
+
+        return binding.root
+    }
+
+    private suspend fun listSubmit() {
+        recAdapter.submitData(pagingData!!)
     }
 
     override val coroutineContext: CoroutineContext

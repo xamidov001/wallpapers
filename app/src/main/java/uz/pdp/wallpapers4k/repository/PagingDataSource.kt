@@ -44,6 +44,7 @@ class PagingDataSource: PagingSource<Int, RandomClass>() {
                         null, currentPage + 1
                     )
             }
+
             return loadResult!!
         } catch (e: Exception) {
             return LoadResult.Error(e.fillInStackTrace())
